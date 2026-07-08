@@ -1,15 +1,50 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
+    %% PawPal+ initial design — derived from brainstormed classes in reflection.md
 
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +str name
+        +str breed
+        +int age
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Task {
+        +str name
+        +str type
+        +Pet pet
+        +int duration
+        +str priority
+        +TimeWindow preferred_time_window
+        +bool completed
+        +mark_complete() void
     }
 
-    ClassName --> AnotherClass : relationship
+    class Owner {
+        +str name
+        +List~Pet~ pets
+        +List~Task~ tasks
+        +add_pet(pet) void
+        +add_task(task) void
+    }
+
+    class Scheduler {
+        +int available_time
+        +List~Task~ tasks
+        +generate_plan() DailyAgenda
+        +explain_plan() str
+    }
+
+    class DailyAgenda {
+        +Date date
+        +List~Task~ scheduled_tasks
+        +List~Task~ skipped_tasks
+        +sort_by_time() void
+        +sort_by_priority() void
+        +display() void
+    }
+
+    Owner "1" o-- "*" Pet : owns
+    Owner "1" o-- "*" Task : creates
+    Task "*" --> "1" Pet : references
+    Scheduler "1" o-- "*" Task : considers
+    Scheduler ..> DailyAgenda : generates
+    DailyAgenda "1" o-- "*" Task : schedules / skips
