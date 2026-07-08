@@ -7,10 +7,35 @@
 - Briefly describe your initial UML design.
 - What classes did you include, and what responsibilities did you assign to each?
 
+**Pet**
+- Attributes: name, breed, age
+- Purpose: holds basic identifying info for the pet; referenced by tasks.
+
+**Task** (generalized — covers walks, feeding, meds, grooming, enrichment)
+- Attributes: name, type, pet, duration, priority, preferred time window (optional), completed
+- Methods: mark_complete()
+
+**Owner**
+- Attributes: name, list of pets, list of tasks
+- Methods: add_pet(pet), add_task(task)
+
+**Scheduler**
+- Attributes: available_time, list of tasks to consider
+- Methods: generate_plan() — orders and fits tasks into available time, breaking ties by priority when tasks compete for time; explain_plan() — returns the reasoning behind what was included, excluded, or reordered
+
+**DailyAgenda**
+- Attributes: date, scheduled_tasks, skipped_tasks
+- Methods: sort_by_time(), sort_by_priority(), display()
+
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Yes, the design changed once I moved from the UML into a working skeleton and traced how the classes would actually talk to each other.
+
+The most important change was making `Task.priority` a comparable type. In my initial design priority was just a string (`"low"`, `"medium"`, `"high"`), which read fine on paper but broke the moment I looked at `Scheduler.generate_plan()` — it needs to break ties by priority, and strings don't order the way I wanted (`"high" < "low"` alphabetically). I replaced it with a `Priority(IntEnum)` (LOW=1, MEDIUM=2, HIGH=3) so the scheduler can compare and sort priorities directly.
+
+A second change was wiring `Owner` and `Scheduler` together. Originally the `Scheduler` only took `available_time`, so there was no path for the owner's tasks to reach it. I gave `Scheduler` an optional `tasks` list in its constructor so an owner's tasks can be handed in as the source of truth, instead of the scheduler maintaining a disconnected list.
+
+I also made a few smaller cleanups while implementing: I typed the previously-loose "preferred time window" as a `TimeWindow` dataclass, typed `DailyAgenda.date` as `datetime.date`, and renamed `Task.type` to `task_type` so it stops shadowing Python's built-in `type`. These didn't change the structure, but they turned vague UML placeholders into things the scheduling logic can actually operate on.
 
 ---
 
