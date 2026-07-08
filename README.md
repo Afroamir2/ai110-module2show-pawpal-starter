@@ -44,7 +44,6 @@ pip install -r requirements.txt
 
 ## 🖥️ Sample Output
 
-Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
 
 ```
  Evening play (enrichment, 20 min, medium) @ 18:00-19:00
