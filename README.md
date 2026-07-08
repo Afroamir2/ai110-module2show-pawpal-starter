@@ -72,14 +72,69 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+Beyond fitting tasks into a time budget, PawPal+ adds four scheduling features.
+Each is summarized below and documented in detail after the table.
 
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Task sorting | `DailyAgenda.sort_by_time()`, `Scheduler._order_key()` | Chronological display order; priority/duration/window selection order |
+| Filtering | `Owner.filter_tasks()` | By pet name and/or completion status |
+| Conflict detection | `Scheduler.detect_conflicts()`, `TimeWindow.overlaps()` | Advisory warnings for overlapping time windows |
+| Recurring tasks | `Task.mark_complete()`, `Owner.mark_task_complete()` | Daily/weekly auto-enrollment of the next occurrence |
+
+### Sorting behavior — `DailyAgenda.sort_by_time()`
+
+After a plan is built, the agenda is displayed in chronological order.
+`sort_by_time()` sorts the scheduled tasks by each task's preferred start time
+rendered as a zero-padded `"HH:MM"` string; because that format is
+zero-padded, lexicographic string order matches clock order
+(`"07:00" < "08:30" < "18:00"`). Tasks with no preferred window use the
+sentinel `"99:99"` so they sort to the end.
+
+A separate **selection** order is defined by `Scheduler._order_key()`, the sort
+key used inside `generate_plan()`: highest priority first, then shorter
+duration (so more tasks fit), then earliest window. Sorting *what to schedule*
+and *how to display it* are intentionally two different orders.
+
+### Filtering behavior — `Owner.filter_tasks(completed=None, pet_name=None)`
+
+Returns the subset of the owner's tasks matching the given filters. Both
+arguments are optional and default to `None` (ignore that filter), so:
+
+- `filter_tasks()` → every task
+- `filter_tasks(completed=False)` → the pending to-do list
+- `filter_tasks(completed=True)` → finished tasks
+- `filter_tasks(pet_name="Luna")` → everything for Luna (case-insensitive)
+- `filter_tasks(pet_name="Luna", completed=True)` → both filters combine (logical AND)
+
+The method builds and returns a new list; it never mutates `Owner.tasks`.
+
+### Conflict detection — `Scheduler.detect_conflicts()`
+
+A lightweight, **non-fatal** check that runs after planning. It compares every
+pair of scheduled tasks that have a preferred window and returns a list of
+warning strings for any overlap — it never raises and never reshuffles the
+plan. The overlap test itself lives in `TimeWindow.overlaps()`, using the
+standard interval rule `start1 < end2 and start2 < end1`, so windows that only
+touch at an endpoint (e.g. `07:00-08:00` and `08:00-08:30`) are *not* treated
+as conflicts. Warnings distinguish a same-pet clash from two different pets,
+since a solo owner can only be in one place at a time. An empty list means the
+plan is clean (or no plan has been generated yet).
+
+### Recurring task logic — `Task.mark_complete()` / `Owner.mark_task_complete()`
+
+A task may repeat via `recurrence="daily"` or `"weekly"` (validated at
+construction). When a recurring task is completed, `Task.mark_complete()` flips
+its `completed` flag and returns a fresh, uncompleted copy for the next
+occurrence, built by `Task._create_next_occurrence()`. The new `due_date` is
+computed from **today** using `datetime.timedelta` — `+1 day` for daily, `+7
+days` for weekly — which handles month/year rollover correctly (e.g.
+`Jul 31 → Aug 1`). A one-off task (no recurrence) returns `None`.
+
+`Owner.mark_task_complete(task)` is the convenience wrapper: it calls
+`mark_complete()` and automatically adds any returned follow-up back into the
+owner's task list, so the next occurrence shows up in future plans without any
+manual bookkeeping.
 
 ## 📸 Demo Walkthrough
 

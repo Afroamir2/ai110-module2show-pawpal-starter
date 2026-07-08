@@ -32,6 +32,15 @@ class TimeWindow:
     start: datetime.time
     end: datetime.time
 
+    def overlaps(self, other: "TimeWindow") -> bool:
+        """True if this window and ``other`` share any clock time.
+
+        Uses the standard interval-overlap test ``start1 < end2 and
+        start2 < end1``. Windows that merely touch at an endpoint (e.g.
+        07:00-08:00 and 08:00-08:30) are treated as non-overlapping.
+        """
+        return self.start < other.end and other.start < self.end
+
     def __str__(self) -> str:
         return f"{self.start:%H:%M}-{self.end:%H:%M}"
 
@@ -56,7 +65,18 @@ class Pet:
 
 
 class Task:
-    """A single care activity for a pet, with duration, priority, and status."""
+    """A single care activity for a pet, with duration, priority, and status.
+
+    A task may repeat on a schedule via ``recurrence`` ("daily" or "weekly").
+    Recurring tasks carry a ``due_date`` so the "next occurrence" lands on a
+    real, later day when the task is completed.
+    """
+
+    # Recurrence values mapped to how far the next occurrence moves.
+    RECURRENCE_STEPS = {
+        "daily": datetime.timedelta(days=1),
+        "weekly": datetime.timedelta(weeks=1),
+    }
 
     def __init__(
         self,
@@ -67,7 +87,18 @@ class Task:
         priority: Priority,
         preferred_time_window: TimeWindow | None = None,
         completed: bool = False,
+        recurrence: str | None = None,
+        due_date: datetime.date | None = None,
     ):
+        if recurrence is not None:
+            recurrence = recurrence.lower()
+            if recurrence not in self.RECURRENCE_STEPS:
+                raise ValueError(
+                    f"recurrence must be one of "
+                    f"{sorted(self.RECURRENCE_STEPS)} or None, "
+                    f"got {recurrence!r}."
+                )
+
         self.name = name
         self.task_type = task_type
         self.pet = pet
@@ -75,15 +106,54 @@ class Task:
         self.priority = priority
         self.preferred_time_window = preferred_time_window
         self.completed = completed
+        self.recurrence = recurrence
+        self.due_date = due_date
 
-    def mark_complete(self) -> None:
+    def mark_complete(self) -> "Task | None":
+        """Mark this task done, spawning the next occurrence if it recurs.
+
+        Returns the newly created follow-up ``Task`` for a recurring task, or
+        ``None`` for a one-off task. The caller is responsible for adding the
+        returned task to an owner/pet so it enters future plans.
+        """
         self.completed = True
+        return self._create_next_occurrence()
+
+    def _create_next_occurrence(self) -> "Task | None":
+        """Build the follow-up task for a recurring task, or ``None``.
+
+        Returns ``None`` for a one-off task (no ``recurrence``). Otherwise
+        returns a fresh, uncompleted copy of this task whose ``due_date`` is
+        advanced from today by the recurrence step (``+1 day`` for daily,
+        ``+7 days`` for weekly).
+        """
+        if self.recurrence is None:
+            return None
+
+        step = self.RECURRENCE_STEPS[self.recurrence]
+        # The next occurrence is measured from *today*, the day the task was
+        # completed. timedelta does the calendar arithmetic exactly, rolling
+        # over month and year boundaries (e.g. Jul 31 + 1 day -> Aug 1).
+        next_due = datetime.date.today() + step
+
+        return Task(
+            self.name,
+            self.task_type,
+            self.pet,
+            self.duration,
+            self.priority,
+            preferred_time_window=self.preferred_time_window,
+            completed=False,
+            recurrence=self.recurrence,
+            due_date=next_due,
+        )
 
     def __repr__(self) -> str:
         return (
             f"Task(name={self.name!r}, type={self.task_type!r}, "
             f"pet={self.pet.name!r}, duration={self.duration}, "
-            f"priority={self.priority}, completed={self.completed})"
+            f"priority={self.priority}, completed={self.completed}, "
+            f"recurrence={self.recurrence!r})"
         )
 
 
@@ -101,6 +171,44 @@ class Owner:
 
     def add_task(self, task: Task) -> None:
         self.tasks.append(task)
+
+    def mark_task_complete(self, task: Task) -> "Task | None":
+        """Complete a task and enroll its next occurrence if it recurs.
+
+        Delegates to ``Task.mark_complete`` (which flips ``completed`` and
+        builds the follow-up), then adds any returned follow-up back into this
+        owner's task list so it shows up in future plans. Returns the newly
+        added task, or ``None`` for a one-off task.
+        """
+        next_task = task.mark_complete()
+        if next_task is not None:
+            self.add_task(next_task)
+        return next_task
+
+    def filter_tasks(
+        self,
+        completed: bool | None = None,
+        pet_name: str | None = None,
+    ) -> list[Task]:
+        """Return tasks matching the given filters.
+
+        Both filters are optional. A filter left as ``None`` is ignored, so
+        passing neither returns every task, and passing both narrows to tasks
+        that satisfy *both* conditions (logical AND).
+
+        Args:
+            completed: If set, keep only tasks whose ``completed`` flag matches.
+            pet_name: If set, keep only tasks whose pet has this name
+                (case-insensitive).
+        """
+        result = self.tasks
+        if completed is not None:
+            result = [t for t in result if t.completed == completed]
+        if pet_name is not None:
+            result = [
+                t for t in result if t.pet.name.lower() == pet_name.lower()
+            ]
+        return result
 
     def __repr__(self) -> str:
         return (
@@ -127,9 +235,19 @@ class Scheduler:
     def add_task(self, task: Task) -> None:
         self.tasks.append(task)
 
+    def _note(self, message: str) -> None:
+        """Record one line of plain-language reasoning for the current plan."""
+        self._reasoning.append(message)
+
     @staticmethod
     def _order_key(task: Task):
-        # Highest priority first; then shorter tasks; then earliest window.
+        """Sort key defining the scheduler's greedy order.
+
+        Returns a tuple sorted ascending, which yields: highest priority
+        first (negated so HIGH leads), then shorter tasks (so more fit), then
+        the earliest preferred window. Tasks without a window use
+        ``datetime.time.max`` so they sort after any timed task.
+        """
         window_start = (
             task.preferred_time_window.start
             if task.preferred_time_window is not None
@@ -138,31 +256,40 @@ class Scheduler:
         return (-int(task.priority), task.duration, window_start)
 
     def generate_plan(self, date: datetime.date | None = None) -> "DailyAgenda":
+        """Greedily fit tasks into the daily time budget for ``date``.
+
+        Sorts the tasks by ``_order_key`` (priority, then duration, then
+        window) and walks them once: completed tasks are noted and skipped,
+        remaining tasks are scheduled while their ``duration`` fits the leftover
+        budget and skipped otherwise. Records a reason for every decision,
+        returns the chronologically sorted ``DailyAgenda``, and caches it as
+        ``last_agenda``. Runs in O(n log n), dominated by the sort.
+        """
         plan_date = date or datetime.date.today()
         agenda = DailyAgenda(plan_date)
         self._reasoning = []
-
-        pending = [t for t in self.tasks if not t.completed]
-        skipped_done = [t for t in self.tasks if t.completed]
-        for task in skipped_done:
-            self._reasoning.append(
-                f"'{task.name}' excluded: already completed."
-            )
-
-        ordered = sorted(pending, key=self._order_key)
         remaining = self.available_time
 
-        for task in ordered:
+        # One pass over the tasks in greedy order. Each task takes exactly one
+        # branch: skip if done, schedule if it fits the remaining budget, or
+        # skip if it doesn't. Reason strings are pushed via _note so the loop
+        # shows the decision, not the formatting.
+        for task in sorted(self.tasks, key=self._order_key):
+            if task.completed:
+                # Noted for the explanation, but it belongs to neither list.
+                self._note(f"'{task.name}' excluded: already completed.")
+                continue
+
             if task.duration <= remaining:
-                agenda.scheduled_tasks.append(task)
                 remaining -= task.duration
-                self._reasoning.append(
+                agenda.scheduled_tasks.append(task)
+                self._note(
                     f"'{task.name}' scheduled: {task.priority} priority, "
                     f"{task.duration} min fits (remaining {remaining} min)."
                 )
             else:
                 agenda.skipped_tasks.append(task)
-                self._reasoning.append(
+                self._note(
                     f"'{task.name}' excluded: needs {task.duration} min but "
                     f"only {remaining} min left in the budget."
                 )
@@ -171,6 +298,44 @@ class Scheduler:
         agenda.sort_by_time()
         self.last_agenda = agenda
         return agenda
+
+    def detect_conflicts(
+        self, agenda: "DailyAgenda | None" = None
+    ) -> list[str]:
+        """Return warnings for scheduled tasks whose windows overlap.
+
+        A lightweight, non-fatal check: it compares every pair of scheduled
+        tasks that have a preferred window and collects a human-readable
+        warning for each overlap. Tasks without a window can't conflict and
+        are ignored. Returns an empty list when the plan is clean (or when no
+        plan has been generated yet) — it never raises.
+        """
+        agenda = agenda if agenda is not None else self.last_agenda
+        if agenda is None:
+            return []
+
+        timed = [
+            t
+            for t in agenda.scheduled_tasks
+            if t.preferred_time_window is not None
+        ]
+
+        warnings: list[str] = []
+        for i in range(len(timed)):
+            for j in range(i + 1, len(timed)):
+                a, b = timed[i], timed[j]
+                if a.preferred_time_window.overlaps(b.preferred_time_window):
+                    who = (
+                        f"same pet, {a.pet.name}"
+                        if a.pet is b.pet
+                        else f"{a.pet.name} & {b.pet.name}"
+                    )
+                    warnings.append(
+                        f"⚠ Conflict: '{a.name}' ({a.preferred_time_window}) "
+                        f"overlaps '{b.name}' ({b.preferred_time_window}) "
+                        f"[{who}]."
+                    )
+        return warnings
 
     def explain_plan(self) -> str:
         if self.last_agenda is None:
@@ -195,13 +360,18 @@ class DailyAgenda:
         self.skipped_tasks: list[Task] = []
 
     def sort_by_time(self) -> None:
-        # Tasks without a preferred window sort to the end.
+        """Sort scheduled tasks chronologically by preferred start time.
+
+        Uses each window's start rendered as a zero-padded ``"HH:MM"`` string,
+        whose lexicographic order matches chronological order
+        (``"07:00" < "08:30" < "18:00"``). Tasks without a preferred window
+        use the sentinel ``"99:99"`` so they sort to the end.
+        """
         self.scheduled_tasks.sort(
             key=lambda t: (
-                t.preferred_time_window is None,
-                t.preferred_time_window.start
+                t.preferred_time_window.start.strftime("%H:%M")
                 if t.preferred_time_window is not None
-                else datetime.time.max,
+                else "99:99"
             )
         )
 

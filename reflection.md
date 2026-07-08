@@ -51,6 +51,33 @@ I also made a few smaller cleanups while implementing: I typed the previously-lo
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
+The biggest tradeoff is that `Scheduler.generate_plan()` treats `available_time`
+as a single pool of minutes rather than placing tasks on a real timeline. It
+sorts tasks by priority (then shorter duration, then earliest preferred window)
+and greedily subtracts each task's `duration` from the remaining budget — so it
+only ever answers "do the total minutes fit?" It never assigns concrete start
+times, which means it does **not** prevent two tasks from occupying the same
+clock time. A 07:00–08:00 walk and a 07:30–08:15 vet call will both be
+"scheduled" as long as their combined 45 minutes fits the budget, even though a
+single owner physically can't do both at once.
+
+I addressed the symptom rather than the root cause: conflict detection lives in
+a separate, advisory `Scheduler.detect_conflicts()` method that runs *after*
+planning, compares the scheduled tasks' preferred windows pairwise, and returns
+warning strings instead of raising or reshuffling the plan. So overlaps are
+surfaced to the owner but not automatically resolved.
+
+This tradeoff is reasonable for the scenario because a pet owner's day has only
+a handful of tasks, the plan is a human-facing suggestion rather than a
+hard-committed calendar, and the owner is the one who ultimately decides when to
+act. A pure minute-budget with an advisory warning keeps `generate_plan()` an
+easy-to-reason-about O(n log n) greedy algorithm and avoids the complexity of
+true timeline placement (packing tasks into non-overlapping slots, handling
+gaps, and shifting windows) — complexity that isn't justified when the human,
+not the program, makes the final call. If PawPal+ ever became an
+enforce-the-calendar tool, resolving overlaps during scheduling (not just
+warning about them) would become worth the added cost.
+
 ---
 
 ## 3. AI Collaboration
