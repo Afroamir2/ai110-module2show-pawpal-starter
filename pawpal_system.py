@@ -187,6 +187,8 @@ class Scheduler:
 
 
 class DailyAgenda:
+    """A day's plan holding the scheduled and skipped tasks for a date."""
+
     def __init__(self, date: datetime.date):
         self.date = date
         self.scheduled_tasks: list[Task] = []
