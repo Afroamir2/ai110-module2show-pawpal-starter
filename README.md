@@ -56,19 +56,62 @@ Plan for 2026-07-07: 3 scheduled, 0 skipped. Used 60/120 min.
 
 ## 🧪 Testing PawPal+
 
+Run the tests from the project root with:
+
 ```bash
-# Run the full test suite:
-pytest
+python -m pytest
+```
+
+The test suite in [`test/test_pawpal.py`](test/test_pawpal.py) covers the core
+domain model (marking a task complete flips its status, and adding a task grows
+a pet's task list) plus the three highest-value scheduling behaviors:
+tasks are returned in **chronological order**, completing a **daily recurring
+task** auto-enrolls a copy due the next day, and the scheduler **flags
+overlapping time windows** (while leaving windows that merely touch at an
+endpoint alone). Test by test:
+
+| Test | What it verifies |
+|------|------------------|
+| `test_mark_complete_changes_status` | `mark_complete()` flips a task's `completed` flag |
+| `test_adding_task_to_pet_increases_count` | Adding a task grows the pet's task list |
+| `test_agenda_sorted_chronologically` | Tasks added out of order are returned earliest-window-first |
+| `test_completing_daily_task_enrolls_next_day` | Completing a daily task auto-enrolls a pending copy due the next day |
+| `test_scheduler_flags_overlapping_times` | `detect_conflicts()` flags two tasks whose windows overlap |
+| `test_touching_windows_do_not_conflict` | Windows that only touch at an endpoint are **not** flagged |
+
+Other useful variations:
+
+```bash
+# Run verbosely (one line per test):
+python -m pytest -v
 
 # Run with coverage:
-pytest --cov
+python -m pytest --cov
 ```
 
 Sample test output:
 
 ```
-# Paste your pytest output here
+plugins: anyio-4.2.0
+collected 6 items
+
+test/test_pawpal.py ......                                                                                        [100%]
+
+=================================================== 6 passed in 0.01s ===================================================
 ```
+
+### Confidence Level: ⭐⭐⭐⭐☆ (4 / 5)
+
+All 6 tests pass, and they exercise the behaviors most likely to break:
+chronological ordering, daily recurrence, and conflict detection (including the
+endpoint-touching boundary case). That's solid coverage of the happy paths.
+
+It is **not** yet 5 stars because the suite doesn't cover known edge cases that
+the current code handles ambiguously — the next occurrence being computed from
+`today()` rather than the task's `due_date`, double-completion spawning
+duplicate follow-ups, non-positive or negative task durations, inverted time
+windows, and budget-exhaustion skip logic. Adding tests (and guards) for those
+would raise confidence to 5.
 
 ## 📐 Smarter Scheduling
 
