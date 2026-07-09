@@ -45,6 +45,7 @@ I also made a few smaller cleanups while implementing: I typed the previously-lo
 
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
 - How did you decide which constraints mattered most?
+My scheduler connsiders all thos contraints listed as examples. But I placed priority as the higher weigth as I figure that would be more realistic.
 
 **b. Tradeoffs**
 
@@ -84,13 +85,20 @@ warning about them) would become worth the added cost.
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+I mostly used AI as a design partner and a second set of eyes. I'd draft my own
+UML and logic first, then have it help me spot where the design would break once
+it hit real code, and lean on it for refactoring and wiring the classes into the
+Streamlit UI. The most helpful prompts were specific ones — "does this UML still
+match my final code?" and "explain how these classes talk to each other" — way
+more useful than just asking it to write a class for me.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+I didn't take the priority-as-string suggestion as-is. Once I saw the scheduler
+had to break ties by priority, strings sorted wrong (`"high" < "low"`
+alphabetically), so I switched it to a `Priority(IntEnum)` myself. In general I
+verified suggestions by running `main.py` and the pytest suite and checking the
+output actually matched what I expected, instead of trusting it looked right.
 
 ---
 
@@ -98,13 +106,19 @@ warning about them) would become worth the added cost.
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+I tested the behaviors most likely to break: `mark_complete()` flipping a task's
+status, adding a task growing a pet's list, the agenda coming back in
+chronological order, a daily task auto-enrolling the next day's copy, and
+`detect_conflicts()` flagging overlapping windows (but not windows that just
+touch at an endpoint). These are the core scheduling promises — if any of them
+broke, the plan would be wrong or misleading.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+Pretty confident on the happy paths — all 6 tests pass and cover the main
+behaviors. Not fully confident yet on edge cases. Next I'd test negative or zero
+durations, inverted time windows, double-completing a recurring task (duplicate
+follow-ups), and computing the next occurrence from `due_date` instead of today.
 
 ---
 
@@ -112,12 +126,19 @@ warning about them) would become worth the added cost.
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+I'm most satisfied with the scheduler's explanation logic — it doesn't just spit
+out a plan, it tells you why each task was scheduled or skipped. That plus the
+advisory conflict warnings made it feel like an actual assistant.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+I'd place tasks on a real timeline instead of treating `available_time` as one
+pool of minutes, so overlaps get resolved during scheduling instead of just
+warned about after.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+A UML on paper looks fine until the classes have to actually talk to each other
+— the design only got real once I traced the data flow in code. And AI is most
+useful when I already have an opinion to check against, not as a replacement for
+thinking through it myself.

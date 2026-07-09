@@ -1,0 +1,75 @@
+classDiagram
+    %% PawPal+ final design — updated to match pawpal_system.py
+
+    class Priority {
+        <<enumeration>>
+        LOW
+        MEDIUM
+        HIGH
+    }
+
+    class TimeWindow {
+        +time start
+        +time end
+        +overlaps(other) bool
+    }
+
+    class Pet {
+        +str name
+        +str breed
+        +int age
+        +List~Task~ tasks
+        +add_task(task) void
+    }
+
+    class Task {
+        +str name
+        +str task_type
+        +Pet pet
+        +int duration
+        +Priority priority
+        +TimeWindow preferred_time_window
+        +bool completed
+        +str recurrence
+        +Date due_date
+        +mark_complete() Task
+    }
+
+    class Owner {
+        +str name
+        +List~Pet~ pets
+        +List~Task~ tasks
+        +add_pet(pet) void
+        +add_task(task) void
+        +mark_task_complete(task) Task
+        +filter_tasks(completed, pet_name) List~Task~
+    }
+
+    class Scheduler {
+        +int available_time
+        +List~Task~ tasks
+        +DailyAgenda last_agenda
+        +add_task(task) void
+        +generate_plan(date) DailyAgenda
+        +detect_conflicts(agenda) List~str~
+        +explain_plan() str
+    }
+
+    class DailyAgenda {
+        +Date date
+        +List~Task~ scheduled_tasks
+        +List~Task~ skipped_tasks
+        +sort_by_time() void
+        +sort_by_priority() void
+        +display() void
+    }
+
+    Owner "1" o-- "*" Pet : owns
+    Owner "1" o-- "*" Task : creates
+    Pet "1" o-- "*" Task : has
+    Task "*" --> "1" Pet : references
+    Task "*" --> "1" TimeWindow : prefers
+    Task ..> Priority : uses
+    Scheduler "1" o-- "*" Task : considers
+    Scheduler ..> DailyAgenda : generates
+    DailyAgenda "1" o-- "*" Task : schedules / skips

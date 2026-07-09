@@ -22,6 +22,35 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## ✨ Features
+
+PawPal+ implements the following algorithms. The domain model and scheduling
+logic live in [`pawpal_system.py`](pawpal_system.py); the interactive UI is in
+[`app.py`](app.py); and a runnable command-line demo is in
+[`main.py`](main.py).
+
+- **Priority-first budget packing** — `Scheduler.generate_plan()` greedily
+  fits tasks into a fixed daily time budget (in minutes), selecting
+  highest-priority tasks first and breaking ties toward shorter duration (so
+  more tasks fit) then the earliest preferred window. Runs in `O(n log n)`.
+- **Sorting by time** — `DailyAgenda.sort_by_time()` orders the agenda
+  chronologically by each task's preferred start time (zero-padded `"HH:MM"`
+  so string order matches clock order; untimed tasks sort last).
+- **Sorting by priority** — `DailyAgenda.sort_by_priority()` reorders the same
+  agenda highest-priority-first for a triage view.
+- **Conflict warnings** — `Scheduler.detect_conflicts()` (backed by
+  `TimeWindow.overlaps()`) flags every pair of scheduled tasks whose preferred
+  windows overlap. Advisory only: it never raises or reshuffles the plan, and
+  windows that merely touch at an endpoint are not flagged.
+- **Task filtering** — `Owner.filter_tasks()` returns tasks by completion
+  status and/or pet name (case-insensitive), combining both as a logical AND
+  without mutating the underlying list.
+- **Daily / weekly recurrence** — completing a recurring task via
+  `Owner.mark_task_complete()` auto-enrolls the next occurrence (`+1 day` for
+  daily, `+7 days` for weekly, with correct month/year rollover).
+- **Plain-language explanations** — `Scheduler.explain_plan()` records and
+  returns a reason for every task that was scheduled, skipped, or excluded.
+
 ## Getting started
 
 ### Setup
@@ -181,12 +210,79 @@ manual bookkeeping.
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### Main UI features
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+Launch the interactive app with `streamlit run app.py`. The page is organized
+top-to-bottom into the actions a user performs:
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
+- **Owner & Pet** — enter the owner name, pet name, and species.
+- **Tasks** — for each task, set a title, duration (minutes), and priority
+  (low / medium / high), and optionally a preferred time window (start/end).
+  **Add task** appends it to a running table; **Clear tasks** empties the list.
+- **Build Schedule** — set the **daily time budget** (minutes), choose whether
+  to order the agenda by **Time** or **Priority**, and filter which
+  **priorities** are shown. **Generate schedule** runs the scheduler and
+  renders the results.
+- **Results** — KPI metrics (scheduled / skipped / budget used) and a progress
+  bar, conflict warnings (`st.warning`) or a clean-plan confirmation
+  (`st.success`), a **Scheduled** table and a **Skipped** table, and a
+  **"Why this plan?"** panel with the scheduler's reasoning.
+
+### Example workflow
+
+1. Enter the owner (**Jordan**) and pet (**Mochi**, a dog).
+2. Add a task: **Morning walk**, 30 min, high priority, window 07:00–08:00.
+3. Add another: **Evening play**, 20 min, medium priority, window 18:00–19:00.
+4. Set the daily budget to **120 min** and leave sorting on **Time**.
+5. Click **Generate schedule** to view today's plan — tasks appear in
+   chronological order with a reason for each.
+
+### Key Scheduler behaviors shown
+
+- **Sorting by time** — tasks added out of order are displayed earliest-first.
+- **Conflict warnings** — overlapping windows (e.g. a 07:00–08:00 walk and a
+  07:30–08:15 vet call) surface an advisory ⚠ warning without changing the plan.
+- **Budget packing & explanations** — higher-priority tasks are packed first
+  until the budget runs out, and each decision is explained in plain language.
+- **Recurrence** — completing a daily task auto-enrolls tomorrow's copy.
+
+### Sample CLI output
+
+The same logic can be exercised without the UI by running the demo script:
+
+```bash
+python main.py
+```
+
+```
+Filtering
+========================================
+Insertion order: ['Evening play', 'Feed Luna', 'Vet phone call', 'Morning walk']
+Pending only:    ['Evening play', 'Vet phone call', 'Morning walk']
+Completed only:  ['Feed Luna']
+Luna's tasks:    ['Evening play', 'Feed Luna', 'Vet phone call']
+
+Today's Schedule (sorted by time)
+========================================
+=== Daily Agenda for 2026-07-08 ===
+Scheduled:
+  • Morning walk (walk, 30 min, high) @ 07:00-08:00
+  • Vet phone call (health, 15 min, high) @ 07:30-08:15
+  • Evening play (enrichment, 20 min, medium) @ 18:00-19:00
+
+Plan for 2026-07-08: 3 scheduled, 0 skipped. Used 65/120 min.
+- 'Vet phone call' scheduled: high priority, 15 min fits (remaining 105 min).
+- 'Morning walk' scheduled: high priority, 30 min fits (remaining 75 min).
+- 'Evening play' scheduled: medium priority, 20 min fits (remaining 55 min).
+
+Conflicts
+========================================
+⚠ Conflict: 'Morning walk' (07:00-08:00) overlaps 'Vet phone call' (07:30-08:15) [Mochi & Luna].
+
+Recurrence
+========================================
+Completing 'Morning walk' (recurrence=daily, due 2026-07-08)...
+Original now completed: True
+Next occurrence auto-added, due: 2026-07-09
+Pending tasks after completion: ['Evening play', 'Vet phone call', 'Morning walk']
+```
